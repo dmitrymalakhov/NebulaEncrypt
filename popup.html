@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 10px;
+      }
+      input {
+        width: 100%;
+        padding: 8px;
+        margin-top: 10px;
+      }
+      button {
+        width: 100%;
+        padding: 8px;
+        margin-top: 10px;
+        cursor: pointer;
+      }
+      .secret-wrapper {
+        width: 400px;
+        margin: 0 auto;
+      }
+    </style>
+  </head>
+  <body>
+    <h3>Enter Secret Keys</h3>
+    <div class="secret-wrapper">
+      <input type="password" id="myKey" placeholder="Enter your secret key" />
+      <input
+        type="password"
+        id="peerKey"
+        placeholder="Enter peer's secret key"
+      />
+      <button id="saveKeys">Save Keys</button>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "NebulaEncrypt",
+  "version": "1.0",
+  "description": "Local encrypt and decrypt telegram messages using secret keys.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "NebulaEncrypt"
+  },
+  "commands": {
+    "encrypt-text": {
+      "suggested_key": {
+        "default": "Ctrl+Q"
+      },
+      "description": "Encrypt selected text"
+    },
+    "decrypt-text": {
+      "suggested_key": {
+        "default": "Ctrl+X"
+      },
+      "description": "Decrypt selected text"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://web.telegram.org/"],
+      "js": ["content.js"]
+    }
+  ]
+}
