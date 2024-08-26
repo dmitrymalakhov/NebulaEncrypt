@@ -15,15 +15,30 @@ function getDomElementsForService() {
   const host = url.host;
 
   if (host.includes("web.telegram.org")) {
-    return {
-      myMessages: document.querySelectorAll(".Message.own .text-content"),
-      peerMessages: document.querySelectorAll(
-        ".Message:not(.own) .text-content"
-      ),
-      inputField: document.getElementById("editable-message-text"),
-    };
+    // Проверяем, используем ли мы версию "A" или "K"
+    const isVersionA = url.pathname.startsWith("/a/");
+
+    if (isVersionA) {
+      // Версия "A"
+      return {
+        myMessages: document.querySelectorAll(".Message.own .text-content"),
+        peerMessages: document.querySelectorAll(
+          ".Message:not(.own) .text-content"
+        ),
+        inputField: document.getElementById("editable-message-text"),
+      };
+    } else {
+      // Версия "K"
+      return {
+        myMessages: document.querySelectorAll(".bubble.is-out .message"),
+        peerMessages: document.querySelectorAll(".bubble.is-in .message"),
+        inputField: document.querySelector(
+          "div[contenteditable='true'].input-message-input"
+        ), // Предположительно, в версии K
+      };
+    }
   }
-  // Добавьте сюда другие сервисы
+  // Добавьте сюда другие сервисы, если они будут поддерживаться
   return null;
 }
 
@@ -53,17 +68,21 @@ async function decryptText(text, password) {
       ["decrypt"]
     );
 
-    // Удаляем время в формате HH:MM в конце строки
-    const cleanText = text.replace(/(\d{2}:\d{2})$/, "");
-
-    const parts = cleanText.split(":");
-
-    if (parts[0] !== "NebulaEncrypt") {
+    // Извлекаем содержимое из < >
+    const matches = text.match(/<(.+)>/);
+    if (!matches || matches.length < 2) {
       throw new Error("Incorrectly formatted encryption string");
     }
 
-    const iv = Uint8Array.from(atob(parts[1]), (c) => c.charCodeAt(0));
-    const encryptedData = Uint8Array.from(atob(parts[2]), (c) =>
+    const cleanText = matches[1]; // Текст внутри <>
+    const parts = cleanText.split(":");
+
+    if (parts.length < 2) {
+      throw new Error("Incorrectly formatted encryption string");
+    }
+
+    const iv = Uint8Array.from(atob(parts[0]), (c) => c.charCodeAt(0));
+    const encryptedData = Uint8Array.from(atob(parts[1]), (c) =>
       c.charCodeAt(0)
     );
 
@@ -116,9 +135,9 @@ async function encryptText(text, password) {
     enc.encode(text)
   );
 
-  return `NebulaEncrypt:${btoa(String.fromCharCode(...iv))}:${btoa(
+  return `NebulaEncrypt:<${btoa(String.fromCharCode(...iv))}:${btoa(
     String.fromCharCode(...new Uint8Array(ciphertext))
-  )}`;
+  )}>`;
 }
 
 async function processMessages() {
