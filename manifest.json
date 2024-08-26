@@ -3,7 +3,7 @@
   "name": "NebulaEncrypt",
   "version": "1.0",
   "description": "Local encrypt and decrypt telegram messages using secret keys.",
-  "permissions": ["activeTab", "scripting", "storage"],
+  "permissions": ["activeTab", "scripting", "storage", "tabs"],
   "background": {
     "service_worker": "background.js"
   },

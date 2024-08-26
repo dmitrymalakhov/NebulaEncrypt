@@ -1,3 +1,34 @@
+async function getKeysForCurrentPage() {
+  const url = new URL(window.location.href);
+  const urlPattern = `${url.protocol}//${url.host}`;
+
+  return new Promise((resolve) => {
+    chrome.storage.local.get("urlKeys", (result) => {
+      const urlKeys = result.urlKeys || {};
+      resolve(urlKeys[urlPattern] || null);
+    });
+  });
+}
+
+function getDomElementsForService() {
+  const url = new URL(window.location.href);
+  const host = url.host;
+
+  if (host.includes("web.telegram.org")) {
+    return {
+      myMessages: document.querySelectorAll(
+        ".peer-color-count-1 .text-content"
+      ),
+      peerMessages: document.querySelectorAll(
+        ".peer-color-count-2 .text-content"
+      ),
+      inputField: document.getElementById("editable-message-text"),
+    };
+  }
+  // Добавьте сюда другие сервисы
+  return null;
+}
+
 async function decryptText(text, password) {
   try {
     const dec = new TextDecoder();
@@ -24,17 +55,15 @@ async function decryptText(text, password) {
       ["decrypt"]
     );
 
-    // Убираем всё, что идет после последнего символа "="
-    const cleanText = text.split("=").slice(0, -1).join("=") + "=";
+    // Удаляем время в формате HH:MM в конце строки
+    const cleanText = text.replace(/(\d{2}:\d{2})$/, "");
 
-    // Проверяем, что строка соответствует ожидаемому формату
     const parts = cleanText.split(":");
 
     if (parts[0] !== "NebulaEncrypt") {
       throw new Error("Incorrectly formatted encryption string");
     }
 
-    // Декодируем iv и зашифрованные данные
     const iv = Uint8Array.from(atob(parts[1]), (c) => c.charCodeAt(0));
     const encryptedData = Uint8Array.from(atob(parts[2]), (c) =>
       c.charCodeAt(0)
@@ -95,72 +124,64 @@ async function encryptText(text, password) {
 }
 
 async function processMessages() {
-  try {
-    const { myKey, peerKey } = await chrome.storage.local.get([
-      "myKey",
-      "peerKey",
-    ]);
+  const keys = await getKeysForCurrentPage();
+  const domElements = getDomElementsForService();
 
-    if (myKey && peerKey) {
-      const myMessages = document.querySelectorAll(
-        ".peer-color-count-1 .text-content"
-      );
-      const peerMessages = document.querySelectorAll(
-        ".peer-color-count-2 .text-content"
-      );
+  if (!keys || !domElements) return;
 
-      for (const msg of myMessages) {
-        if (msg.textContent.startsWith("NebulaEncrypt:")) {
-          const decryptedText = await decryptText(msg.textContent, myKey);
-          if (decryptedText !== null) {
-            msg.textContent = decryptedText;
-          }
-        }
-      }
+  const { myKey, peerKey } = keys;
 
-      for (const msg of peerMessages) {
-        if (msg.textContent.startsWith("NebulaEncrypt:")) {
-          const decryptedText = await decryptText(msg.textContent, peerKey);
-          if (decryptedText !== null) {
-            msg.textContent = decryptedText;
-          }
-        }
+  const { myMessages, peerMessages } = domElements;
+
+  for (const msg of myMessages) {
+    if (msg.textContent.startsWith("NebulaEncrypt:")) {
+      const decryptedText = await decryptText(msg.textContent, myKey);
+      if (decryptedText !== null) {
+        msg.textContent = decryptedText;
       }
     }
-  } catch (error) {
-    console.error("Error processing messages:", error);
+  }
+
+  for (const msg of peerMessages) {
+    if (msg.textContent.startsWith("NebulaEncrypt:")) {
+      const decryptedText = await decryptText(msg.textContent, peerKey);
+      if (decryptedText !== null) {
+        msg.textContent = decryptedText;
+      }
+    }
   }
 }
 
 if (!window.hasRun) {
-  window.hasRun = true; // Флаг, чтобы убедиться, что скрипт выполнен только один раз
+  window.hasRun = true;
 
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     try {
+      const domElements = getDomElementsForService();
+      if (!domElements) return;
+
+      const { inputField } = domElements;
+
       if (request.action === "encryptText") {
-        // Получаем текст из элемента с id 'editable-message-text'
-        let inputField = document.getElementById("editable-message-text");
-        let textToEncrypt = inputField.innerText.trim(); // Извлекаем текст
+        getKeysForCurrentPage().then((keys) => {
+          if (!keys) {
+            sendResponse({ success: false });
+            return;
+          }
 
-        // Проверяем, начинается ли текст с метки `NebulaEncrypt`
-        if (textToEncrypt.startsWith("NebulaEncrypt:")) {
-          console.warn("Text is already encrypted, skipping re-encryption.");
-          sendResponse({
-            success: false,
-            message: "Text is already encrypted.",
-          });
-          return;
-        }
+          let textToEncrypt = inputField.innerText.trim();
 
-        chrome.storage.local.get("myKey", async (result) => {
-          const myKey = result.myKey;
-          if (myKey && textToEncrypt) {
-            const encryptedText = await encryptText(textToEncrypt, myKey);
+          if (textToEncrypt.startsWith("NebulaEncrypt:")) {
+            sendResponse({
+              success: false,
+              message: "Text is already encrypted.",
+            });
+            return;
+          }
 
-            // Заменяем текст в поле ввода на зашифрованный текст
+          encryptText(textToEncrypt, keys.myKey).then((encryptedText) => {
             inputField.innerText = encryptedText;
 
-            // Создаем и отправляем событие 'input' для уведомления Telegram о том, что текст изменился
             const inputEvent = new Event("input", {
               bubbles: true,
               cancelable: true,
@@ -168,19 +189,16 @@ if (!window.hasRun) {
             inputField.dispatchEvent(inputEvent);
 
             sendResponse({ success: true });
-          } else {
-            sendResponse({ success: false });
-          }
+          });
         });
         return true;
       }
 
       if (request.action === "decryptText") {
-        processMessages(); // Запускаем процесс дешифрации по запросу
+        processMessages();
         sendResponse({ success: true });
       }
     } catch (error) {
-      console.error("Error during message processing:", error);
       sendResponse({ success: false });
     }
   });
@@ -188,16 +206,15 @@ if (!window.hasRun) {
 
 document.addEventListener("DOMContentLoaded", async () => {
   try {
-    await processMessages(); // Гарантируем выполнение всех операций
+    await processMessages();
   } catch (error) {
     console.error("Error during initial decryption:", error);
   }
 });
 
-// Повторная попытка расшифровки каждые 1 секунд
 setInterval(async () => {
   try {
-    await processMessages(); // Гарантируем выполнение всех операций
+    await processMessages();
   } catch (error) {
     console.error("Error during periodic decryption:", error);
   }

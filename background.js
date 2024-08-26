@@ -67,3 +67,20 @@ chrome.commands.onCommand.addListener((command) => {
     });
   }
 });
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === "complete") {
+    const url = new URL(tab.url);
+    const urlPattern = `${url.protocol}//${url.host}`;
+
+    chrome.storage.local.get("urlKeys", (result) => {
+      const urlKeys = result.urlKeys || {};
+
+      if (urlKeys[urlPattern]) {
+        chrome.action.setIcon({ path: "encrypted-icon.png", tabId: tabId });
+      } else {
+        chrome.action.setIcon({ path: "warning-icon.png", tabId: tabId });
+      }
+    });
+  }
+});

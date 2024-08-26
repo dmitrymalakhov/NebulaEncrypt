@@ -1,3 +1,4 @@
+<!-- popup.html -->
 <!DOCTYPE html>
 <html>
   <head>
@@ -6,7 +7,8 @@
         font-family: Arial, sans-serif;
         padding: 10px;
       }
-      input {
+      input,
+      select {
         width: 100%;
         padding: 8px;
         margin-top: 10px;
@@ -24,17 +26,20 @@
     </style>
   </head>
   <body>
-    <h3>Enter Secret Keys</h3>
+    <h3>Configure Encryption</h3>
     <div class="secret-wrapper">
+      <input type="url" id="pageUrl" placeholder="Enter URL pattern" />
       <input type="password" id="myKey" placeholder="Enter your secret key" />
       <input
         type="password"
         id="peerKey"
         placeholder="Enter peer's secret key"
       />
-      <button id="saveKeys">Save Keys</button>
+      <button id="saveKeys">Save Keys for this URL</button>
     </div>
-
+    <hr />
+    <h3>Saved URLs</h3>
+    <div id="savedUrls"></div>
     <script src="popup.js"></script>
   </body>
 </html>
