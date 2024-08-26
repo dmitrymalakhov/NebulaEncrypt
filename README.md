@@ -1,5 +1,9 @@
 # NebulaEncrypt - Chrome Extension for Secure Local Encryption on the Web
 
+<p align="center">
+  <img src="assets/NebulaEncrypt.gif" alt="NebulaEncrypt Demo">
+</p>
+
 NebulaEncrypt is a Chrome extension that ensures your messages on [Telegram Web](https://web.telegram.org) are encrypted and decrypted locally on your device. This guarantees that your communications remain private, with encryption keys stored exclusively on your computer.
 
 ## Key Features
