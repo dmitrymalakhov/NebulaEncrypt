@@ -1,73 +1,54 @@
-# NebulaEncrypt - Chrome Extension for Secure, Local-Only Encryption on Telegram Web
+# NebulaEncrypt - Chrome Extension for Secure Local Encryption on the Web
 
-NebulaEncrypt is a powerful Chrome extension designed to ensure your messages on [Telegram Web](https://web.telegram.org) are encrypted locally, keeping your communications secure and private. All encryption and decryption operations happen directly on your device, and your encryption keys are stored only locally. This guarantees that even if someone intercepts your messages, they remain unreadable without your private key.
+NebulaEncrypt is a Chrome extension that ensures your messages on [Telegram Web](https://web.telegram.org) are encrypted and decrypted locally on your device. This guarantees that your communications remain private, with encryption keys stored exclusively on your computer.
 
-## Why NebulaEncrypt?
+## Key Features
 
-In an era where digital privacy is paramount, NebulaEncrypt offers a robust solution for secure messaging on Telegram Web. By ensuring that encryption happens entirely on your device, NebulaEncrypt keeps your messages safe from prying eyes. Your encryption keys never leave your computer, ensuring that only you can decrypt your messages.
+- **Local-Only Encryption**: All encryption and decryption processes occur directly on your device. Your encryption keys are never transmitted over the network.
+- **Per-URL Key Configuration**: Customize encryption keys for different websites. The extension applies the correct key based on the URL of the active tab.
+- **Automatic and Manual Encryption/Decryption**: Encrypt and decrypt messages with hotkeys or automatically based on the URL settings.
+- **Real-Time Operation**: Messages are processed in real-time without interrupting your workflow.
+- **Service-Specific DOM Handling**: Supports Telegram Web, with the ability to extend to other services by customizing DOM element selection.
 
-## Features
-
-- **Local Encryption on Telegram Web**: All encryption and decryption processes occur locally on your device. Your data and keys are never transmitted over the network.
-- **Secure Key Storage**: Encryption keys are stored securely and only locally. No one else has access to them, ensuring that only you can decrypt your messages.
-- **Automatic Encryption**: Automatically encrypt your messages before sending them with a simple hotkey or automatically when you click send or press `Enter`.
-- **Automatic Decryption**: Automatically decrypt incoming messages on Telegram Web so you can read them in plaintext.
-- **Seamless Integration**: Integrates directly with Telegram Web without disrupting your workflow.
-- **Real-time Processing**: Messages are encrypted and decrypted in real-time, ensuring seamless communication without compromising security.
-
-## Platform Support
-
-Currently, NebulaEncrypt is designed and optimized to work exclusively with [Telegram Web](https://web.telegram.org). We are committed to providing the best possible experience on this platform, ensuring that your messages remain secure.
-
-### Want to Help Expand NebulaEncrypt?
-
-We are excited to explore expanding NebulaEncrypt to support other messaging platforms. If you're a developer interested in contributing, we welcome pull requests (PRs) to extend support to other platforms. Your contributions can help make NebulaEncrypt a more versatile tool for secure messaging across the web.
-
-## Getting Started
+## Quick Start
 
 ### Installation
 
-1. Clone or download the repository.
-2. Open Chrome and navigate to `chrome://extensions/`.
-3. Enable "Developer mode" in the top-right corner.
-4. Click "Load unpacked" and select the directory containing the extension files.
-5. The NebulaEncrypt extension will now be loaded into your browser.
+1. Download or clone the repository.
+2. In Chrome, go to `chrome://extensions/`.
+3. Enable "Developer mode" and click "Load unpacked".
+4. Select the folder containing the extension files.
 
 ### Usage
 
-1. **Set Your Key**: Click on the extension icon in your browser toolbar to open the popup. Set your encryption/decryption key. This key is stored locally on your device and never leaves it.
-2. **Encrypt Messages**: Write your message in the Telegram Web input field, press `Ctrl+X` and after that `Enter` or click send.
-3. **Decrypt Messages**: Incoming encrypted messages on Telegram Web will be automatically decrypted and displayed in plaintext, provided you have the correct key.
+1. **Set Up Keys**: Click the extension icon and enter encryption keys for specific URLs. The extension will use these keys automatically when you visit the corresponding websites.
+2. **Encrypt Messages**: Write your message in the input field on Telegram Web and press `Ctrl+Q` to encrypt before sending.
+3. **Decrypt Messages**: Incoming encrypted messages are automatically decrypted if the correct key is configured for the current URL.
 
 ### Hotkeys
 
-- **Encrypt Text in Input**: `Ctrl+Q` (or your configured hotkey) - Encrypts the text currently in the Telegram Web input field before sending.
-- **Decrypt All Messages**: `Ctrl+X` (or your configured hotkey) - Manually triggers the decryption of all received encrypted messages on Telegram Web.
+- **Encrypt Text**: `Ctrl+Q` - Encrypts text in the input field before sending.
+- **Decrypt All Messages**: `Ctrl+X` - Manually decrypts all received encrypted messages.
 
 ## Technical Details
 
-- **AES-GCM Encryption**: Uses the AES-GCM algorithm for strong encryption, performed entirely on your device.
-- **Local Storage of Keys**: Encryption keys are stored securely on your device and never transmitted. Your keys never leave your device, ensuring complete control over your encrypted communications.
-- **No Network Involvement**: All encryption and decryption processes occur locally, with no network interactions involved in handling your keys or unencrypted data.
+- **AES-GCM Encryption**: Utilizes the AES-GCM algorithm, performed entirely on your device.
+- **Local Key Storage**: Keys are securely stored on your device and never leave it.
+- **Dynamic Service Support**: Automatically detects and applies the correct encryption settings based on the active service (currently supporting Telegram Web).
 
 ## Troubleshooting
 
-- **Encrypted Message Not Sent**: Ensure the input field is correctly detected by the extension, and make sure your key is properly set in the extension.
-- **Decryption Issues**: Double-check that the correct encryption key is set in the extension. Without the correct key, messages cannot be decrypted.
+- **Message Not Encrypted**: Ensure the correct URL is associated with the appropriate encryption keys in the extension settings.
+- **Decryption Issues**: Verify that the correct key is set for the current URL. Without the correct key, decryption is impossible.
 
 ## Contributing
 
-We are always looking to improve NebulaEncrypt, and we'd love to see it support more platforms beyond Telegram Web. If you're interested in contributing, feel free to fork the repository and submit a pull request (PR). Let's work together to make secure messaging accessible on more platforms.
+We welcome contributions to expand NebulaEncrypt to other web services. Fork the repository and submit a pull request to help extend secure messaging across the web.
 
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Acknowledgements
-
-- AES-GCM encryption is provided by the Web Cryptography API.
-- Inspired by the need for truly secure, local-only encryption in an increasingly connected world.
-
 ---
 
-**Protect your communications on Telegram Web with NebulaEncrypt - because your privacy matters.**
+**Protect your online communications with NebulaEncrypt. Your privacy, your control.**
