@@ -71,14 +71,14 @@ async function decryptText(text, password) {
     // Извлекаем содержимое из < >
     const matches = text.match(/<(.+)>/);
     if (!matches || matches.length < 2) {
-      throw new Error("Incorrectly formatted encryption string");
+      return null;
     }
 
     const cleanText = matches[1]; // Текст внутри <>
     const parts = cleanText.split(":");
 
     if (parts.length < 2) {
-      throw new Error("Incorrectly formatted encryption string");
+      return null;
     }
 
     const iv = Uint8Array.from(atob(parts[0]), (c) => c.charCodeAt(0));
