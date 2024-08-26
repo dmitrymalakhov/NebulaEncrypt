@@ -16,11 +16,9 @@ function getDomElementsForService() {
 
   if (host.includes("web.telegram.org")) {
     return {
-      myMessages: document.querySelectorAll(
-        ".peer-color-count-1 .text-content"
-      ),
+      myMessages: document.querySelectorAll(".Message.own .text-content"),
       peerMessages: document.querySelectorAll(
-        ".peer-color-count-2 .text-content"
+        ".Message:not(.own) .text-content"
       ),
       inputField: document.getElementById("editable-message-text"),
     };
@@ -215,7 +213,5 @@ document.addEventListener("DOMContentLoaded", async () => {
 setInterval(async () => {
   try {
     await processMessages();
-  } catch (error) {
-    console.error("Error during periodic decryption:", error);
-  }
+  } catch (error) {}
 }, 1000);
