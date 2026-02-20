@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "NebulaEncrypt",
   "version": "1.0",
-  "description": "Local encrypt and decrypt telegram messages using secret keys.",
-  "permissions": ["activeTab", "scripting", "storage", "tabs"],
+  "description": "Локальное шифрование сообщений в Telegram и MAX. Ключи только на устройстве.",
+  "permissions": ["activeTab", "scripting", "storage", "tabs", "notifications"],
   "background": {
     "service_worker": "background.js"
   },
@@ -14,20 +14,22 @@
   "commands": {
     "encrypt-text": {
       "suggested_key": {
-        "default": "Ctrl+Q"
+        "default": "Ctrl+Alt+E",
+        "mac": "Ctrl+Shift+E"
       },
-      "description": "Encrypt selected text"
+      "description": "Зашифровать текст"
     },
     "decrypt-text": {
       "suggested_key": {
-        "default": "Ctrl+X"
+        "default": "Ctrl+Alt+D",
+        "mac": "Ctrl+Shift+D"
       },
-      "description": "Decrypt selected text"
+      "description": "Расшифровать сообщения"
     }
   },
   "content_scripts": [
     {
-      "matches": ["https://web.telegram.org/"],
+      "matches": ["https://web.telegram.org/*","https://web.max.ru/*"],
       "js": ["content.js"]
     }
   ]

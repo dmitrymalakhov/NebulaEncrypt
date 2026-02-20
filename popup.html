@@ -1,45 +1,291 @@
-<!-- popup.html -->
 <!DOCTYPE html>
-<html>
+<html lang="ru">
   <head>
+    <meta charset="utf-8" />
     <style>
-      body {
-        font-family: Arial, sans-serif;
-        padding: 10px;
+      :root {
+        --bg: #ffffff;
+        --bg2: #f5f5f5;
+        --fg: #1a1a1a;
+        --fg2: #555;
+        --border: #ddd;
+        --accent: #4a6cf7;
+        --accent-hover: #3b5de7;
+        --success-bg: #d4edda;
+        --success-fg: #155724;
+        --error-bg: #f8d7da;
+        --error-fg: #721c24;
+        --kbd-bg: #e8e8e8;
+        --input-bg: #fff;
+        --input-border: #ccc;
+        --strength-0: #ccc;
+        --strength-1: #e74c3c;
+        --strength-2: #e67e22;
+        --strength-3: #f1c40f;
+        --strength-4: #2ecc71;
       }
-      input,
-      select {
-        width: 100%;
-        padding: 8px;
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1e1e2e;
+          --bg2: #282840;
+          --fg: #e0e0e0;
+          --fg2: #999;
+          --border: #3a3a52;
+          --accent: #6c8cff;
+          --accent-hover: #5a78f0;
+          --success-bg: #1a3d2a;
+          --success-fg: #6fcf97;
+          --error-bg: #3d1a1a;
+          --error-fg: #f29b9b;
+          --kbd-bg: #333350;
+          --input-bg: #2a2a42;
+          --input-border: #444466;
+          --strength-0: #444;
+          --strength-1: #e74c3c;
+          --strength-2: #e67e22;
+          --strength-3: #f1c40f;
+          --strength-4: #2ecc71;
+        }
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+        padding: 16px;
+        min-width: 380px;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+      h3 {
+        font-size: 15px;
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      h3 .logo { font-size: 18px; }
+      label {
+        display: block;
         margin-top: 10px;
+        font-weight: 600;
+        font-size: 12px;
+        color: var(--fg2);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      input, select {
+        width: 100%;
+        padding: 8px 10px;
+        margin-top: 4px;
+        border: 1px solid var(--input-border);
+        border-radius: 6px;
+        background: var(--input-bg);
+        color: var(--fg);
+        font-size: 13px;
+        outline: none;
+        transition: border-color 0.15s;
+      }
+      input:focus, select:focus {
+        border-color: var(--accent);
       }
       button {
-        width: 100%;
-        padding: 8px;
-        margin-top: 10px;
+        padding: 8px 14px;
+        margin-top: 8px;
         cursor: pointer;
+        border: none;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        transition: background 0.15s, transform 0.1s;
       }
-      .secret-wrapper {
-        width: 400px;
-        margin: 0 auto;
+      button:active { transform: scale(0.98); }
+      .btn-primary {
+        width: 100%;
+        background: var(--accent);
+        color: #fff;
       }
+      .btn-primary:hover { background: var(--accent-hover); }
+      .btn-small {
+        background: var(--bg2);
+        color: var(--fg);
+        border: 1px solid var(--border);
+        padding: 5px 10px;
+        font-size: 12px;
+      }
+      .btn-small:hover { background: var(--border); }
+      .btn-danger {
+        background: transparent;
+        color: var(--error-fg);
+        border: 1px solid var(--error-fg);
+        padding: 4px 8px;
+        font-size: 11px;
+      }
+      .service-detect {
+        margin-top: 6px;
+        font-size: 11px;
+        color: var(--fg2);
+        font-style: italic;
+      }
+      .status {
+        margin-top: 8px;
+        padding: 8px 10px;
+        border-radius: 6px;
+        font-size: 12px;
+        display: none;
+      }
+      .status.success { background: var(--success-bg); color: var(--success-fg); display: block; }
+      .status.error { background: var(--error-bg); color: var(--error-fg); display: block; }
+      .hotkeys {
+        margin-top: 14px;
+        padding: 10px;
+        background: var(--bg2);
+        border-radius: 6px;
+        font-size: 12px;
+        color: var(--fg2);
+        line-height: 1.6;
+      }
+      kbd {
+        background: var(--kbd-bg);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 11px;
+      }
+      hr {
+        border: none;
+        border-top: 1px solid var(--border);
+        margin: 14px 0;
+      }
+      .key-row {
+        display: flex;
+        gap: 6px;
+        align-items: flex-end;
+      }
+      .key-row input { flex: 1; }
+      .key-row button { margin-top: 0; flex-shrink: 0; align-self: flex-end; }
+      .strength-bar {
+        height: 4px;
+        border-radius: 2px;
+        background: var(--strength-0);
+        margin-top: 4px;
+        overflow: hidden;
+        transition: all 0.2s;
+      }
+      .strength-bar .fill {
+        height: 100%;
+        width: 0%;
+        border-radius: 2px;
+        transition: width 0.2s, background 0.2s;
+      }
+      .saved-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 6px 0;
+        border-bottom: 1px solid var(--border);
+        gap: 8px;
+      }
+      .saved-item span {
+        flex: 1;
+        font-size: 12px;
+        word-break: break-all;
+      }
+      .actions-row {
+        display: flex;
+        gap: 6px;
+        margin-top: 10px;
+      }
+      .actions-row button { flex: 1; }
+      .quick-actions {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 14px;
+      }
+      .btn-action {
+        flex: 1;
+        padding: 10px 12px;
+        font-size: 13px;
+        font-weight: 600;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background 0.15s, transform 0.1s;
+      }
+      .btn-action:active { transform: scale(0.98); }
+      .btn-encrypt {
+        background: var(--accent);
+        color: #fff;
+      }
+      .btn-encrypt:hover { background: var(--accent-hover); }
+      .btn-decrypt {
+        background: var(--bg2);
+        color: var(--fg);
+        border: 1px solid var(--border);
+      }
+      .btn-decrypt:hover { background: var(--border); }
+      #savedUrls:empty::after {
+        content: "Нет сохранённых ключей";
+        color: var(--fg2);
+        font-size: 12px;
+        font-style: italic;
+      }
+      .file-input { display: none; }
     </style>
   </head>
   <body>
-    <h3>Configure Encryption</h3>
-    <div class="secret-wrapper">
-      <input type="url" id="pageUrl" placeholder="Enter URL pattern" />
-      <input type="password" id="myKey" placeholder="Enter your secret key" />
-      <input
-        type="password"
-        id="peerKey"
-        placeholder="Enter peer's secret key"
-      />
-      <button id="saveKeys">Save Keys for this URL</button>
+    <h3><span class="logo">&#x1F510;</span> NebulaEncrypt</h3>
+
+    <div class="quick-actions">
+      <button type="button" class="btn-action btn-encrypt" id="btnEncrypt" title="Зашифровать текст в поле ввода на открытой вкладке">&#x1F512; Зашифровать</button>
+      <button type="button" class="btn-action btn-decrypt" id="btnDecrypt" title="Расшифровать сообщения на странице">&#x1F513; Расшифровать</button>
     </div>
+
+    <label for="serviceSelect">Сервис</label>
+    <select id="serviceSelect">
+      <option value="https://web.telegram.org/">Telegram</option>
+      <option value="https://web.max.ru/">MAX</option>
+    </select>
+    <p class="service-detect" id="serviceDetect"></p>
+
+    <label for="pageUrl">URL</label>
+    <input type="url" id="pageUrl" placeholder="https://..." readonly />
+
+    <label for="myKey">Ваш ключ</label>
+    <div class="key-row">
+      <input type="password" id="myKey" placeholder="Введите ключ" autocomplete="off" />
+      <button class="btn-small" id="genMyKey" title="Сгенерировать случайный ключ">&#x1f3b2;</button>
+      <button class="btn-small" id="toggleMyKey" title="Показать/скрыть">&#x1f441;</button>
+    </div>
+    <div class="strength-bar" id="myKeyStrength"><div class="fill"></div></div>
+
+    <label for="peerKey">Ключ собеседника</label>
+    <div class="key-row">
+      <input type="password" id="peerKey" placeholder="Введите ключ" autocomplete="off" />
+      <button class="btn-small" id="genPeerKey" title="Сгенерировать случайный ключ">&#x1f3b2;</button>
+      <button class="btn-small" id="togglePeerKey" title="Показать/скрыть">&#x1f441;</button>
+    </div>
+    <div class="strength-bar" id="peerKeyStrength"><div class="fill"></div></div>
+
+    <button class="btn-primary" id="saveKeys">Сохранить ключи</button>
+    <div id="status" class="status"></div>
+
+    <div class="actions-row">
+      <button class="btn-small" id="exportKeys">Экспорт ключей</button>
+      <button class="btn-small" id="importKeysBtn">Импорт ключей</button>
+      <input type="file" id="importFile" accept=".json" class="file-input" />
+    </div>
+
+    <div class="hotkeys">
+      <strong>Горячие клавиши:</strong><br />
+      <kbd>Ctrl+Alt+E</kbd> <kbd>⌃⇧E</kbd> — зашифровать текст<br />
+      <kbd>Ctrl+Alt+D</kbd> <kbd>⌃⇧D</kbd> — расшифровать сообщения
+    </div>
+
     <hr />
-    <h3>Saved URLs</h3>
+    <h3>Сохранённые сайты</h3>
     <div id="savedUrls"></div>
+
     <script src="popup.js"></script>
   </body>
 </html>
