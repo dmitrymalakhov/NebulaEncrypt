@@ -1,14 +1,71 @@
+if (!globalThis.nebulaExtensionApi && typeof importScripts === "function") {
+  importScripts("extension-api.js");
+}
+
+const SUPPORTED_HOSTS = new Set(["web.telegram.org", "web.max.ru"]);
+
+function hasValidKeyPair(record) {
+  return (
+    record &&
+    typeof record === "object" &&
+    typeof record.myKey === "string" &&
+    typeof record.peerKey === "string" &&
+    record.myKey.length > 0 &&
+    record.peerKey.length > 0
+  );
+}
+
+function getSupportedUrlPattern(tabUrl) {
+  try {
+    const url = new URL(tabUrl);
+    if (url.protocol !== "https:" || !SUPPORTED_HOSTS.has(url.host)) {
+      return null;
+    }
+    return `${url.protocol}//${url.host}/`;
+  } catch {
+    return null;
+  }
+}
+
+function updateTabBadge(tabId, tabUrl) {
+  const urlPattern = getSupportedUrlPattern(tabUrl);
+  if (!urlPattern) {
+    try {
+      chrome.action.setBadgeText({ text: "", tabId });
+    } catch {}
+    return;
+  }
+
+  chrome.storage.local.get("urlKeys", (result) => {
+    const urlKeys = result.urlKeys || {};
+    const hasKeys = hasValidKeyPair(urlKeys[urlPattern]);
+    try {
+      chrome.action.setBadgeText({ text: hasKeys ? "✓" : "!", tabId });
+      chrome.action.setBadgeBackgroundColor({
+        color: hasKeys ? "#4CAF50" : "#FF9800",
+        tabId,
+      });
+    } catch {}
+  });
+}
+
 function sendCommandToTab(action) {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (!tabs.length) return;
-    const tabId = tabs[0].id;
+    const tab = tabs[0];
+    if (!getSupportedUrlPattern(tab.url || "")) {
+      showNotification("NebulaEncrypt", "Откройте вкладку Telegram Web или MAX и нажмите сочетание клавиш снова.");
+      return;
+    }
+    const tabId = tab.id;
+    if (!tabId) return;
     chrome.scripting.executeScript(
       { target: { tabId }, files: ["content.js"] },
       () => {
         if (chrome.runtime.lastError) return;
         chrome.tabs.sendMessage(tabId, { action }, (response) => {
           if (chrome.runtime.lastError) {
-            showNotification("NebulaEncrypt", "Перезагрузите страницу MAX и нажмите сочетание клавиш снова.");
+            showNotification("NebulaEncrypt", "Перезагрузите страницу чата и нажмите сочетание клавиш снова.");
             return;
           }
           if (!response?.success && response?.message) {
@@ -52,43 +109,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status !== "complete" || !tab?.url) return;
-  try {
-    const url = new URL(tab.url);
-    const base = `${url.protocol}//${url.host}`;
-    const urlPattern = base.endsWith("/") ? base : base + "/";
-
-    chrome.storage.local.get("urlKeys", (result) => {
-      const urlKeys = result.urlKeys || {};
-      const hasKeys = !!urlKeys[urlPattern];
-      try {
-        chrome.action.setBadgeText({ text: hasKeys ? "" : "!", tabId });
-        chrome.action.setBadgeBackgroundColor({
-          color: hasKeys ? "#4CAF50" : "#FF9800",
-          tabId,
-        });
-      } catch {}
-    });
-  } catch {}
+  updateTabBadge(tabId, tab.url);
 });
 
 chrome.tabs.onActivated.addListener(({ tabId }) => {
   chrome.tabs.get(tabId, (tab) => {
     if (!tab?.url) return;
-    try {
-      const url = new URL(tab.url);
-      const base = `${url.protocol}//${url.host}`;
-      const urlPattern = base.endsWith("/") ? base : base + "/";
-      chrome.storage.local.get("urlKeys", (result) => {
-        const urlKeys = result.urlKeys || {};
-        const hasKeys = !!urlKeys[urlPattern];
-        try {
-          chrome.action.setBadgeText({ text: hasKeys ? "" : "!", tabId });
-          chrome.action.setBadgeBackgroundColor({
-            color: hasKeys ? "#4CAF50" : "#FF9800",
-            tabId,
-          });
-        } catch {}
-      });
-    } catch {}
+    updateTabBadge(tabId, tab.url);
   });
 });

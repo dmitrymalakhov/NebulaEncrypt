@@ -1,3 +1,17 @@
+(() => {
+const GLOBAL_STATE_KEY = "__nebulaEncryptState";
+const state = window[GLOBAL_STATE_KEY] || (window[GLOBAL_STATE_KEY] = {});
+if (state.initialized) {
+  return;
+}
+state.initialized = true;
+
+const ENCRYPTED_PREFIX = "NebulaEncrypt:";
+const SALT_PREFIX = "NebulaEncrypt-v1-";
+const MAX_ENCRYPTED_PAYLOAD_LENGTH = 24000;
+const DECRYPTED_ATTR = "data-nebula-decrypted";
+const FAILED_ATTR = "data-nebula-decrypt-failed";
+
 /** Единый формат URL для хранения ключей (с trailing slash) */
 function getUrlPattern() {
   const url = new URL(window.location.href);
@@ -10,7 +24,18 @@ async function getKeysForCurrentPage() {
   return new Promise((resolve) => {
     chrome.storage.local.get("urlKeys", (result) => {
       const urlKeys = result.urlKeys || {};
-      resolve(urlKeys[urlPattern] || null);
+      const keys = urlKeys[urlPattern] || null;
+      if (
+        keys &&
+        typeof keys.myKey === "string" &&
+        typeof keys.peerKey === "string" &&
+        keys.myKey.length > 0 &&
+        keys.peerKey.length > 0
+      ) {
+        resolve(keys);
+        return;
+      }
+      resolve(null);
     });
   });
 }
@@ -130,16 +155,23 @@ function base64ToUint8(b64) {
   return bytes;
 }
 
+function isLikelyBase64(value) {
+  return /^[A-Za-z0-9+/]+={0,2}$/.test(value);
+}
+
 // --------------- Key derivation cache ---------------
 const KEY_CACHE_MAX = 32;
 const _keyCache = new Map();
 
-function _keyCacheId(password, salt, usage) {
-  return `${usage}:${salt}:${password}`;
+async function _keyCacheId(password, salt, usage, iterations) {
+  const enc = new TextEncoder();
+  const raw = enc.encode(`${usage}:${iterations}:${salt}:${password}`);
+  const digest = await crypto.subtle.digest("SHA-256", raw);
+  return uint8ToBase64(new Uint8Array(digest));
 }
 
 async function getCachedKey(password, saltValue, usage, iterations = 210000) {
-  const id = _keyCacheId(password, saltValue, usage);
+  const id = await _keyCacheId(password, saltValue, usage, iterations);
   if (_keyCache.has(id)) return _keyCache.get(id);
 
   if (_keyCache.size >= KEY_CACHE_MAX) {
@@ -171,15 +203,24 @@ async function getCachedKey(password, saltValue, usage, iterations = 210000) {
   return key;
 }
 
+async function keyFingerprint(password, role) {
+  const enc = new TextEncoder();
+  const raw = enc.encode(`${role}:${getUrlPattern()}:${password}`);
+  const digest = await crypto.subtle.digest("SHA-256", raw);
+  return uint8ToBase64(new Uint8Array(digest));
+}
+
 // --------------- Decrypt ---------------
 function parseEncryptedPayload(text) {
-  const m = text.match(/<([^>]+)>/);
-  if (!m || m.length < 2) return null;
-  const sepIdx = m[1].indexOf(":");
-  if (sepIdx < 1) return null;
+  const normalized = (text || "").trim();
+  if (!normalized.startsWith(ENCRYPTED_PREFIX)) return null;
+  if (normalized.length > MAX_ENCRYPTED_PAYLOAD_LENGTH) return null;
+  const m = normalized.match(/^NebulaEncrypt:<([^:>]+):([^>]+)>$/);
+  if (!m) return null;
+  if (!isLikelyBase64(m[1]) || !isLikelyBase64(m[2])) return null;
   try {
-    const iv = base64ToUint8(m[1].slice(0, sepIdx));
-    const data = base64ToUint8(m[1].slice(sepIdx + 1));
+    const iv = base64ToUint8(m[1]);
+    const data = base64ToUint8(m[2]);
     if (iv.length !== 12) return null;
     return { iv, data };
   } catch { return null; }
@@ -193,8 +234,8 @@ async function decryptText(text, password) {
 
   // v2 (210k iters) → v1 (100k iters, new salt) → legacy (100k iters, old salt)
   const attempts = [
-    { salt: "NebulaEncrypt-v1-" + getUrlPattern(), iters: 210000 },
-    { salt: "NebulaEncrypt-v1-" + getUrlPattern(), iters: 100000 },
+    { salt: SALT_PREFIX + getUrlPattern(), iters: 210000 },
+    { salt: SALT_PREFIX + getUrlPattern(), iters: 100000 },
     { salt: "a-unique-salt", iters: 100000 },
   ];
   for (const { salt, iters } of attempts) {
@@ -210,7 +251,7 @@ async function decryptText(text, password) {
 // --------------- Encrypt ---------------
 async function encryptText(text, password) {
   const enc = new TextEncoder();
-  const salt = "NebulaEncrypt-v1-" + getUrlPattern();
+  const salt = SALT_PREFIX + getUrlPattern();
   const key = await getCachedKey(password, salt, "encrypt", 210000);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ciphertext = await crypto.subtle.encrypt(
@@ -218,7 +259,7 @@ async function encryptText(text, password) {
     key,
     enc.encode(text)
   );
-  return `NebulaEncrypt:<${uint8ToBase64(iv)}:${uint8ToBase64(new Uint8Array(ciphertext))}>`;
+  return `${ENCRYPTED_PREFIX}<${uint8ToBase64(iv)}:${uint8ToBase64(new Uint8Array(ciphertext))}>`;
 }
 
 // --------------- Visual indicator CSS ---------------
@@ -227,22 +268,15 @@ function injectDecryptedStyles() {
   const style = document.createElement("style");
   style.id = "nebula-encrypt-styles";
   style.textContent = `
-    [data-nebula-decrypted] {
-      position: relative;
-    }
-    [data-nebula-decrypted]::before {
-      content: "\\1F512";
-      font-size: 10px;
-      margin-right: 4px;
-      opacity: 0.5;
-      vertical-align: middle;
-    }
     [data-nebula-encrypted] {
       cursor: pointer;
-      border-bottom: 1px dashed rgba(128,128,128,0.5);
+      text-decoration-line: underline;
+      text-decoration-style: dotted;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
     }
     [data-nebula-encrypted]:hover {
-      background: rgba(0,0,0,0.04);
+      background: rgba(15,118,110,0.08);
       border-radius: 4px;
     }
   `;
@@ -269,16 +303,19 @@ function getMessageTextSpanAndVariant(clickTarget) {
 
   if (service === "TELEGRAM_A") {
     const content = clickTarget.closest(".text-content");
-    if (!content || !content.querySelector(".Message.own")) return null;
+    if (!content) return null;
     if (!content.contains(clickTarget) && clickTarget !== content) return null;
-    return { textSpan: content, isMy: true };
+    const message = content.closest(".Message");
+    if (!message) return null;
+    return { textSpan: content, isMy: message.classList.contains("own") };
   }
 
   if (service === "TELEGRAM_K") {
-    const msg = clickTarget.closest(".bubble.is-out .message");
-    if (!msg) return null;
-    if (!msg.contains(clickTarget) && clickTarget !== msg) return null;
-    return { textSpan: msg, isMy: true };
+    const bubble = clickTarget.closest(".bubble");
+    if (!bubble) return null;
+    const msg = bubble.querySelector(".message");
+    if (!msg || (!msg.contains(clickTarget) && clickTarget !== msg)) return null;
+    return { textSpan: msg, isMy: bubble.classList.contains("is-out") };
   }
 
   return null;
@@ -293,16 +330,51 @@ function markEncryptedInFeed() {
   for (const span of allSpans) {
     if (span.getAttribute(DECRYPTED_ATTR)) continue;
     const raw = (span.textContent || "").trim();
-    if (raw.startsWith("NebulaEncrypt:")) {
+    if (raw.startsWith(ENCRYPTED_PREFIX)) {
       span.setAttribute("data-nebula-encrypted", "1");
-      span.setAttribute("title", "Нажмите, чтобы расшифровать");
+      span.setAttribute(
+        "title",
+        span.getAttribute(FAILED_ATTR)
+          ? "Не удалось расшифровать текущими ключами"
+          : "Нажмите, чтобы расшифровать"
+      );
     }
   }
 }
 
 // --------------- Process messages ---------------
-const DECRYPTED_ATTR = "data-nebula-decrypted";
 let _decryptedCount = 0;
+
+function getMessageRawText(msg) {
+  return (msg.textContent || "").trim();
+}
+
+function applyDecryptedText(msg, decryptedText) {
+  msg.textContent = decryptedText;
+  msg.setAttribute(DECRYPTED_ATTR, "1");
+  msg.removeAttribute(FAILED_ATTR);
+  msg.removeAttribute("data-nebula-encrypted");
+  msg.setAttribute("title", "Расшифровано NebulaEncrypt");
+}
+
+async function decryptMessageNode(msg, password, fingerprint, options = {}) {
+  if (msg.getAttribute(DECRYPTED_ATTR)) return false;
+
+  const raw = getMessageRawText(msg);
+  if (!raw.startsWith(ENCRYPTED_PREFIX)) return false;
+  if (!options.force && msg.getAttribute(FAILED_ATTR) === fingerprint) return false;
+
+  const decryptedText = await decryptText(raw, password);
+  if (decryptedText !== null) {
+    applyDecryptedText(msg, decryptedText);
+    return true;
+  }
+
+  msg.setAttribute(FAILED_ATTR, fingerprint);
+  msg.setAttribute("data-nebula-encrypted", "1");
+  msg.setAttribute("title", "Не удалось расшифровать текущими ключами");
+  return false;
+}
 
 async function processMessages() {
   const keys = await getKeysForCurrentPage();
@@ -311,30 +383,16 @@ async function processMessages() {
 
   const { myKey, peerKey } = keys;
   const { myMessages, peerMessages } = domElements;
+  const myFingerprint = await keyFingerprint(myKey, "my");
+  const peerFingerprint = await keyFingerprint(peerKey, "peer");
   let newlyDecrypted = 0;
 
   for (const msg of myMessages) {
-    if (msg.getAttribute(DECRYPTED_ATTR)) continue;
-    const raw = msg.textContent;
-    if (!raw.startsWith("NebulaEncrypt:")) continue;
-    const decryptedText = await decryptText(raw, myKey);
-    if (decryptedText !== null) {
-      msg.textContent = decryptedText;
-      msg.setAttribute(DECRYPTED_ATTR, "1");
-      newlyDecrypted++;
-    }
+    if (await decryptMessageNode(msg, myKey, myFingerprint)) newlyDecrypted++;
   }
 
   for (const msg of peerMessages) {
-    if (msg.getAttribute(DECRYPTED_ATTR)) continue;
-    const raw = msg.textContent;
-    if (!raw.startsWith("NebulaEncrypt:")) continue;
-    const decryptedText = await decryptText(raw, peerKey);
-    if (decryptedText !== null) {
-      msg.textContent = decryptedText;
-      msg.setAttribute(DECRYPTED_ATTR, "1");
-      newlyDecrypted++;
-    }
+    if (await decryptMessageNode(msg, peerKey, peerFingerprint)) newlyDecrypted++;
   }
 
   if (newlyDecrypted > 0) {
@@ -355,8 +413,8 @@ async function handleFeedMessageClick(e) {
   if (!info) return;
   const { textSpan, isMy } = info;
   if (textSpan.getAttribute(DECRYPTED_ATTR)) return;
-  const raw = (textSpan.textContent || "").trim();
-  if (!raw.startsWith("NebulaEncrypt:")) return;
+  const raw = getMessageRawText(textSpan);
+  if (!raw.startsWith(ENCRYPTED_PREFIX)) return;
 
   e.preventDefault();
   e.stopPropagation();
@@ -364,13 +422,10 @@ async function handleFeedMessageClick(e) {
   const keys = await getKeysForCurrentPage();
   if (!keys) return;
   const password = isMy ? keys.myKey : keys.peerKey;
-  const decryptedText = await decryptText(raw, password);
-  if (decryptedText === null) return;
+  const fingerprint = await keyFingerprint(password, isMy ? "my" : "peer");
+  const decrypted = await decryptMessageNode(textSpan, password, fingerprint, { force: true });
+  if (!decrypted) return;
 
-  textSpan.textContent = decryptedText;
-  textSpan.setAttribute(DECRYPTED_ATTR, "1");
-  textSpan.removeAttribute("data-nebula-encrypted");
-  textSpan.removeAttribute("title");
   _decryptedCount++;
   try {
     chrome.runtime.sendMessage({ action: "updateBadge", count: _decryptedCount });
@@ -391,14 +446,21 @@ function startMessageObserver() {
       markEncryptedInFeed();
     }, 300);
   });
-  observer.observe(document.body, { childList: true, subtree: true });
+  observer.observe(document.body, { childList: true, characterData: true, subtree: true });
 }
 
-// --------------- Message listener ---------------
-if (!window.hasRun) {
-  window.hasRun = true;
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local" || !changes.urlKeys) return;
+  _keyCache.clear();
+  document.querySelectorAll(`[${FAILED_ATTR}]`).forEach((el) => {
+    el.removeAttribute(FAILED_ATTR);
+    el.removeAttribute("title");
+  });
+  processMessages().catch(() => {});
+});
 
-  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+// --------------- Message listener ---------------
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     try {
       const domElements = getDomElementsForService();
       if (!domElements) {
@@ -418,12 +480,12 @@ if (!window.hasRun) {
               sendResponse({ success: false, message: "Ключи не настроены для этого сайта." });
               return;
             }
-            const textToEncrypt = inputField.innerText.trim();
-            if (!textToEncrypt) {
+            const textToEncrypt = inputField.innerText || inputField.textContent || "";
+            if (!textToEncrypt.trim()) {
               sendResponse({ success: false, message: "Нет текста для шифрования." });
               return;
             }
-            if (textToEncrypt.startsWith("NebulaEncrypt:")) {
+            if (textToEncrypt.trim().startsWith(ENCRYPTED_PREFIX)) {
               sendResponse({ success: false, message: "Текст уже зашифрован." });
               return;
             }
@@ -461,7 +523,7 @@ if (!window.hasRun) {
                   // 2) Если через 50ms поле не обновилось — пробуем execCommand insertText (замена выделения)
                   setTimeout(() => {
                     const after = (inputField.innerText || inputField.textContent || "").trim();
-                    if (!after.startsWith("NebulaEncrypt:")) {
+                    if (!after.startsWith(ENCRYPTED_PREFIX)) {
                       replaceFieldWithText(encryptedText);
                     }
                   }, 50);
@@ -471,7 +533,7 @@ if (!window.hasRun) {
 
                 setTimeout(() => {
                   const now = (inputField.innerText || inputField.textContent || "").trim();
-                  if (!now.startsWith("NebulaEncrypt:")) {
+                  if (!now.startsWith(ENCRYPTED_PREFIX)) {
                     navigator.clipboard.writeText(encryptedText).then(
                       () => sendResponse({ success: false, message: "Текст скопирован в буфер. Вставьте в поле ввода (Ctrl+V)." }),
                       () => sendResponse({ success: false, message: "Кликните в поле ввода в чате и нажмите «Зашифровать» снова." })
@@ -506,15 +568,22 @@ if (!window.hasRun) {
     }
     return true;
   });
-}
 
-document.addEventListener("DOMContentLoaded", async () => {
+async function boot() {
   try {
     startMessageObserver();
     await processMessages();
+    markEncryptedInFeed();
   } catch (error) {
     console.error("NebulaEncrypt: initial decryption error", error);
   }
-});
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", boot, { once: true });
+} else {
+  boot();
+}
 
 setInterval(() => processMessages().catch(() => {}), 5000);
+})();
