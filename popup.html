@@ -26,11 +26,6 @@
         --input-bg: #ffffff;
         --input-border: #cfdbe1;
         --kbd-bg: #e8eef1;
-        --strength-0: #c9d4da;
-        --strength-1: #d94b3d;
-        --strength-2: #d57b1f;
-        --strength-3: #c7a318;
-        --strength-4: #15945b;
         --shadow: 0 18px 40px rgba(18, 33, 42, 0.14);
       }
       @media (prefers-color-scheme: dark) {
@@ -57,7 +52,6 @@
           --input-bg: #111a20;
           --input-border: #33464f;
           --kbd-bg: #26353d;
-          --strength-0: #3b4a51;
         }
       }
       * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -284,18 +278,11 @@
       .icon-button:hover {
         background: var(--surface-hover);
       }
-      .strength-bar {
-        height: 4px;
-        border-radius: 999px;
-        background: var(--strength-0);
-        margin-top: 6px;
-        overflow: hidden;
-      }
-      .strength-bar .fill {
-        height: 100%;
-        width: 0%;
-        border-radius: inherit;
-        transition: width 0.18s ease, background 0.18s ease;
+      .key-hint {
+        margin: 0 0 10px;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.4;
       }
       .primary-button {
         width: 100%;
@@ -389,7 +376,7 @@
         <div class="brand-name">NebulaEncrypt</div>
         <div class="brand-tagline">Local-first privacy layer</div>
       </div>
-      <div class="brand-badge">v1.0</div>
+      <div class="brand-badge">v1.1</div>
     </header>
 
     <main class="shell">
@@ -427,6 +414,7 @@
         <div class="section-header">
           <h2 class="section-title">Ключи чата</h2>
         </div>
+        <p class="key-hint">Сгенерируйте отдельные случайные ключи кнопкой ✦. Скопируйте свой ключ до сохранения и передайте его собеседнику по доверенному каналу.</p>
 
         <div class="field">
           <label for="myKey">Ваш ключ</label>
@@ -435,7 +423,6 @@
             <button type="button" class="icon-button" id="genMyKey" title="Сгенерировать случайный ключ" aria-label="Сгенерировать ваш ключ">&#x2726;</button>
             <button type="button" class="icon-button" id="toggleMyKey" title="Показать/скрыть" aria-label="Показать или скрыть ваш ключ" aria-pressed="false">&#x25D0;</button>
           </div>
-          <div class="strength-bar" id="myKeyStrength"><div class="fill"></div></div>
         </div>
 
         <div class="field">
@@ -445,7 +432,6 @@
             <button type="button" class="icon-button" id="genPeerKey" title="Сгенерировать случайный ключ" aria-label="Сгенерировать ключ собеседника">&#x2726;</button>
             <button type="button" class="icon-button" id="togglePeerKey" title="Показать/скрыть" aria-label="Показать или скрыть ключ собеседника" aria-pressed="false">&#x25D0;</button>
           </div>
-          <div class="strength-bar" id="peerKeyStrength"><div class="fill"></div></div>
         </div>
 
         <button type="button" class="primary-button" id="saveKeys">Сохранить ключи</button>

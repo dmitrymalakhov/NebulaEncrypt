@@ -5,8 +5,10 @@ const SERVICE_URLS = {
   max: "https://web.max.ru/",
 };
 const SUPPORTED_HOSTS = new Set(["web.telegram.org", "web.max.ru"]);
-const BACKUP_TYPE = "NebulaEncrypt.encryptedBackup.v1";
-const BACKUP_KDF_ITERATIONS = 210000;
+const BACKUP_TYPE = "NebulaEncrypt.encryptedBackup.v2";
+const LEGACY_BACKUP_TYPE = "NebulaEncrypt.encryptedBackup.v1";
+const BACKUP_KDF_ITERATIONS = 600000;
+const LEGACY_BACKUP_KDF_ITERATIONS = 210000;
 const BACKUP_FILE_MAX_BYTES = 1024 * 1024;
 
 if (!globalThis.chrome) {
@@ -91,30 +93,6 @@ function sanitizeUrlKeys(value) {
   return sanitized;
 }
 
-// --------------- Key strength ---------------
-function measureStrength(password) {
-  if (!password) return 0;
-  let score = 0;
-  if (password.length >= 8) score++;
-  if (password.length >= 16) score++;
-  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score++;
-  if (/\d/.test(password)) score++;
-  if (/[^a-zA-Z0-9]/.test(password)) score++;
-  return Math.min(score, 4);
-}
-
-const STRENGTH_COLORS = ["#ccc", "#e74c3c", "#e67e22", "#f1c40f", "#2ecc71"];
-const STRENGTH_WIDTHS = [0, 25, 50, 75, 100];
-
-function updateStrengthBar(barId, value) {
-  const bar = document.getElementById(barId);
-  if (!bar) return;
-  const fill = bar.querySelector(".fill");
-  const s = measureStrength(value);
-  fill.style.width = STRENGTH_WIDTHS[s] + "%";
-  fill.style.background = STRENGTH_COLORS[s];
-}
-
 // --------------- Random key ---------------
 function generateKey(length = 32) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
@@ -150,7 +128,7 @@ function base64ToUint8(b64) {
   return bytes;
 }
 
-async function deriveBackupKey(passphrase, salt) {
+async function deriveBackupKey(passphrase, salt, iterations) {
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
     "raw",
@@ -164,7 +142,7 @@ async function deriveBackupKey(passphrase, salt) {
     {
       name: "PBKDF2",
       salt,
-      iterations: BACKUP_KDF_ITERATIONS,
+      iterations,
       hash: "SHA-256",
     },
     keyMaterial,
@@ -178,7 +156,7 @@ async function encryptBackup(urlKeys, passphrase) {
   const enc = new TextEncoder();
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await deriveBackupKey(passphrase, salt);
+  const key = await deriveBackupKey(passphrase, salt, BACKUP_KDF_ITERATIONS);
   const payload = {
     version: 2,
     exportedAt: new Date().toISOString(),
@@ -206,11 +184,16 @@ async function encryptBackup(urlKeys, passphrase) {
 }
 
 async function decryptBackup(backup, passphrase) {
+  const iterations = backup?.type === BACKUP_TYPE
+    ? BACKUP_KDF_ITERATIONS
+    : backup?.type === LEGACY_BACKUP_TYPE
+      ? LEGACY_BACKUP_KDF_ITERATIONS
+      : null;
   if (
     !backup ||
-    backup.type !== BACKUP_TYPE ||
+    iterations === null ||
     backup.kdf?.name !== "PBKDF2-HMAC-SHA-256" ||
-    backup.kdf?.iterations !== BACKUP_KDF_ITERATIONS ||
+    backup.kdf?.iterations !== iterations ||
     typeof backup.kdf?.salt !== "string" ||
     backup.cipher?.name !== "AES-GCM" ||
     typeof backup.cipher?.iv !== "string" ||
@@ -227,7 +210,8 @@ async function decryptBackup(backup, passphrase) {
     throw new Error("Некорректный формат резервной копии.");
   }
 
-  const key = await deriveBackupKey(passphrase, salt);
+  if (data.length < 16) throw new Error("Некорректный формат резервной копии.");
+  const key = await deriveBackupKey(passphrase, salt, iterations);
   const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, data);
   return JSON.parse(dec.decode(plaintext));
 }
@@ -268,7 +252,7 @@ function runCommand(action) {
     }
     const tabId = tab.id;
     chrome.scripting.executeScript(
-      { target: { tabId }, files: ["content.js"] },
+      { target: { tabId }, files: ["message-crypto.js", "content.js"] },
       () => {
         if (chrome.runtime.lastError) {
           showStatus("Перезагрузите страницу чата и попробуйте снова.", true);
@@ -304,17 +288,18 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btnEncrypt").addEventListener("click", () => runCommand("encryptText"));
   document.getElementById("btnDecrypt").addEventListener("click", () => runCommand("decryptText"));
 
-  myKeyInput.addEventListener("input", () => updateStrengthBar("myKeyStrength", myKeyInput.value));
-  peerKeyInput.addEventListener("input", () => updateStrengthBar("peerKeyStrength", peerKeyInput.value));
-
   function setChipState(el, message, state) {
     el.textContent = message;
     el.classList.toggle("is-ok", state === "ok");
     el.classList.toggle("is-warn", state === "warn");
   }
 
-  function setKeyState(hasKeys) {
-    setChipState(keyStateEl, hasKeys ? "Ключи готовы" : "Нет ключей", hasKeys ? "ok" : "warn");
+  function setKeyState(hasKeys, shortKeys = false) {
+    setChipState(
+      keyStateEl,
+      !hasKeys ? "Нет ключей" : shortKeys ? "Короткие ключи" : "Ключи готовы",
+      hasKeys && !shortKeys ? "ok" : "warn"
+    );
   }
 
   function toggleSecretInput(input, button) {
@@ -338,13 +323,11 @@ document.addEventListener("DOMContentLoaded", () => {
     myKeyInput.value = generateKey();
     myKeyInput.type = "text";
     document.getElementById("toggleMyKey").setAttribute("aria-pressed", "true");
-    updateStrengthBar("myKeyStrength", myKeyInput.value);
   });
   document.getElementById("genPeerKey").addEventListener("click", () => {
     peerKeyInput.value = generateKey();
     peerKeyInput.type = "text";
     document.getElementById("togglePeerKey").setAttribute("aria-pressed", "true");
-    updateStrengthBar("peerKeyStrength", peerKeyInput.value);
   });
 
   function setPageUrlByService() {
@@ -363,7 +346,7 @@ document.addEventListener("DOMContentLoaded", () => {
     chrome.storage.local.get({ urlKeys: {} }, (result) => {
       const urlKeys = sanitizeUrlKeys(result.urlKeys) || {};
       const keys = urlKeys[urlPattern];
-      setKeyState(!!keys);
+      setKeyState(!!keys, !!keys && (keys.myKey.length < 16 || keys.peerKey.length < 16));
       if (keys) {
         myKeyInput.placeholder = "••••••• (сохранён)";
         peerKeyInput.placeholder = "••••••• (сохранён)";
@@ -401,8 +384,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (!urlPattern) { showStatus("Укажите URL или выберите сервис.", true); return; }
     if (!myKey || !peerKey) { showStatus("Введите оба ключа.", true); return; }
-    if (measureStrength(myKey) < 2) { showStatus("Ваш ключ слишком слабый. Минимум 8 символов, разный регистр или цифры.", true); return; }
-    if (measureStrength(peerKey) < 2) { showStatus("Ключ собеседника слишком слабый. Минимум 8 символов, разный регистр или цифры.", true); return; }
+    if (myKey.length > 4096 || peerKey.length > 4096) { showStatus("Ключ слишком длинный.", true); return; }
+    if (myKey.length < 16) { showStatus("Ваш ключ слишком короткий. Используйте отдельный случайный ключ из 32 символов.", true); return; }
+    if (peerKey.length < 16) { showStatus("Ключ собеседника слишком короткий. Используйте отдельный случайный ключ из 32 символов.", true); return; }
 
     chrome.storage.local.get({ urlKeys: {} }, (result) => {
       const urlKeys = sanitizeUrlKeys(result.urlKeys) || {};
@@ -411,8 +395,6 @@ document.addEventListener("DOMContentLoaded", () => {
         showStatus("Ключи сохранены!", false);
         myKeyInput.value = "";
         peerKeyInput.value = "";
-        updateStrengthBar("myKeyStrength", "");
-        updateStrengthBar("peerKeyStrength", "");
         setKeyState(true);
         loadSavedUrls();
         loadKeysForCurrentUrl();
@@ -423,8 +405,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // --------------- Export / Import ---------------
   document.getElementById("exportKeys").addEventListener("click", async () => {
     const passphrase = backupPassphraseInput.value;
-    if (measureStrength(passphrase) < 2) {
-      showStatus("Введите пароль резервной копии: минимум 8 символов, разный регистр или цифры.", true);
+    if (passphrase.length < 16) {
+      showStatus("Пароль резервной копии должен быть не короче 16 символов. Лучше использовать случайный пароль.", true);
       return;
     }
 
@@ -467,7 +449,11 @@ document.addEventListener("DOMContentLoaded", () => {
         const parsed = JSON.parse(reader.result);
         let importedPayload = parsed;
 
-        if (parsed?.type === BACKUP_TYPE) {
+        if (parsed?.type && parsed.type !== BACKUP_TYPE && parsed.type !== LEGACY_BACKUP_TYPE) {
+          throw new Error("Неподдерживаемый формат резервной копии.");
+        }
+
+        if (parsed?.type === BACKUP_TYPE || parsed?.type === LEGACY_BACKUP_TYPE) {
           const passphrase = backupPassphraseInput.value;
           if (!passphrase) {
             showStatus("Введите пароль резервной копии перед импортом.", true);

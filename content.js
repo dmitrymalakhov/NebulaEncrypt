@@ -7,10 +7,8 @@ if (state.initialized) {
 state.initialized = true;
 
 const ENCRYPTED_PREFIX = "NebulaEncrypt:";
-const SALT_PREFIX = "NebulaEncrypt-v1-";
-const MAX_ENCRYPTED_PAYLOAD_LENGTH = 24000;
 const DECRYPTED_ATTR = "data-nebula-decrypted";
-const FAILED_ATTR = "data-nebula-decrypt-failed";
+let failedDecryptions = new WeakMap();
 
 /** Единый формат URL для хранения ключей (с trailing slash) */
 function getUrlPattern() {
@@ -138,128 +136,12 @@ function getDomElementsForService() {
   return null;
 }
 
-// --------------- Binary ↔ Base64 helpers ---------------
-function uint8ToBase64(bytes) {
-  const CHUNK = 0x8000;
-  const parts = [];
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    parts.push(String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK)));
-  }
-  return btoa(parts.join(""));
-}
-
-function base64ToUint8(b64) {
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-}
-
-function isLikelyBase64(value) {
-  return /^[A-Za-z0-9+/]+={0,2}$/.test(value);
-}
-
-// --------------- Key derivation cache ---------------
-const KEY_CACHE_MAX = 32;
-const _keyCache = new Map();
-
-async function _keyCacheId(password, salt, usage, iterations) {
-  const enc = new TextEncoder();
-  const raw = enc.encode(`${usage}:${iterations}:${salt}:${password}`);
-  const digest = await crypto.subtle.digest("SHA-256", raw);
-  return uint8ToBase64(new Uint8Array(digest));
-}
-
-async function getCachedKey(password, saltValue, usage, iterations = 210000) {
-  const id = await _keyCacheId(password, saltValue, usage, iterations);
-  if (_keyCache.has(id)) return _keyCache.get(id);
-
-  if (_keyCache.size >= KEY_CACHE_MAX) {
-    const oldest = _keyCache.keys().next().value;
-    _keyCache.delete(oldest);
-  }
-
-  const enc = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    enc.encode(password),
-    { name: "PBKDF2" },
-    false,
-    ["deriveBits", "deriveKey"]
-  );
-  const key = await crypto.subtle.deriveKey(
-    {
-      name: "PBKDF2",
-      salt: enc.encode(saltValue),
-      iterations,
-      hash: "SHA-256",
-    },
-    keyMaterial,
-    { name: "AES-GCM", length: 256 },
-    false,
-    [usage]
-  );
-  _keyCache.set(id, key);
-  return key;
-}
-
-async function keyFingerprint(password, role) {
-  const enc = new TextEncoder();
-  const raw = enc.encode(`${role}:${getUrlPattern()}:${password}`);
-  const digest = await crypto.subtle.digest("SHA-256", raw);
-  return uint8ToBase64(new Uint8Array(digest));
-}
-
-// --------------- Decrypt ---------------
-function parseEncryptedPayload(text) {
-  const normalized = (text || "").trim();
-  if (!normalized.startsWith(ENCRYPTED_PREFIX)) return null;
-  if (normalized.length > MAX_ENCRYPTED_PAYLOAD_LENGTH) return null;
-  const m = normalized.match(/^NebulaEncrypt:<([^:>]+):([^>]+)>$/);
-  if (!m) return null;
-  if (!isLikelyBase64(m[1]) || !isLikelyBase64(m[2])) return null;
-  try {
-    const iv = base64ToUint8(m[1]);
-    const data = base64ToUint8(m[2]);
-    if (iv.length !== 12) return null;
-    return { iv, data };
-  } catch { return null; }
-}
-
 async function decryptText(text, password) {
-  const payload = parseEncryptedPayload(text);
-  if (!payload) return null;
-  const { iv, data } = payload;
-  const dec = new TextDecoder();
-
-  // v2 (210k iters) → v1 (100k iters, new salt) → legacy (100k iters, old salt)
-  const attempts = [
-    { salt: SALT_PREFIX + getUrlPattern(), iters: 210000 },
-    { salt: SALT_PREFIX + getUrlPattern(), iters: 100000 },
-    { salt: "a-unique-salt", iters: 100000 },
-  ];
-  for (const { salt, iters } of attempts) {
-    try {
-      const key = await getCachedKey(password, salt, "decrypt", iters);
-      const buf = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, data);
-      return dec.decode(buf);
-    } catch { continue; }
-  }
-  return null;
+  return globalThis.NebulaMessageCrypto.decryptText(text, password, getUrlPattern());
 }
 
-// --------------- Encrypt ---------------
 async function encryptText(text, password) {
-  const enc = new TextEncoder();
-  const salt = SALT_PREFIX + getUrlPattern();
-  const key = await getCachedKey(password, salt, "encrypt", 210000);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
-    key,
-    enc.encode(text)
-  );
-  return `${ENCRYPTED_PREFIX}<${uint8ToBase64(iv)}:${uint8ToBase64(new Uint8Array(ciphertext))}>`;
+  return globalThis.NebulaMessageCrypto.encryptText(text, password, getUrlPattern());
 }
 
 // --------------- Visual indicator CSS ---------------
@@ -328,13 +210,13 @@ function markEncryptedInFeed() {
   const { myMessages, peerMessages } = domElements;
   const allSpans = [...myMessages, ...peerMessages];
   for (const span of allSpans) {
-    if (span.getAttribute(DECRYPTED_ATTR)) continue;
     const raw = (span.textContent || "").trim();
+    if (span.getAttribute(DECRYPTED_ATTR) && !raw.startsWith(ENCRYPTED_PREFIX)) continue;
     if (raw.startsWith(ENCRYPTED_PREFIX)) {
       span.setAttribute("data-nebula-encrypted", "1");
       span.setAttribute(
         "title",
-        span.getAttribute(FAILED_ATTR)
+        failedDecryptions.get(span)?.raw === raw
           ? "Не удалось расшифровать текущими ключами"
           : "Нажмите, чтобы расшифровать"
       );
@@ -352,47 +234,57 @@ function getMessageRawText(msg) {
 function applyDecryptedText(msg, decryptedText) {
   msg.textContent = decryptedText;
   msg.setAttribute(DECRYPTED_ATTR, "1");
-  msg.removeAttribute(FAILED_ATTR);
+  failedDecryptions.delete(msg);
   msg.removeAttribute("data-nebula-encrypted");
   msg.setAttribute("title", "Расшифровано NebulaEncrypt");
 }
 
-async function decryptMessageNode(msg, password, fingerprint, options = {}) {
-  if (msg.getAttribute(DECRYPTED_ATTR)) return false;
-
+async function decryptMessageNode(msg, password, role, options = {}) {
   const raw = getMessageRawText(msg);
+  if (msg.getAttribute(DECRYPTED_ATTR)) {
+    if (!raw.startsWith(ENCRYPTED_PREFIX)) return false;
+    msg.removeAttribute(DECRYPTED_ATTR);
+  }
   if (!raw.startsWith(ENCRYPTED_PREFIX)) return false;
-  if (!options.force && msg.getAttribute(FAILED_ATTR) === fingerprint) return false;
+  const previousFailure = failedDecryptions.get(msg);
+  if (!options.force && previousFailure?.raw === raw && previousFailure.role === role) return false;
 
   const decryptedText = await decryptText(raw, password);
+  if (getMessageRawText(msg) !== raw) return false;
   if (decryptedText !== null) {
     applyDecryptedText(msg, decryptedText);
     return true;
   }
 
-  msg.setAttribute(FAILED_ATTR, fingerprint);
+  failedDecryptions.set(msg, { raw, role });
   msg.setAttribute("data-nebula-encrypted", "1");
   msg.setAttribute("title", "Не удалось расшифровать текущими ключами");
   return false;
 }
 
-async function processMessages() {
+let processPromise = null;
+function processMessages() {
+  if (!processPromise) {
+    processPromise = processMessagesOnce().finally(() => { processPromise = null; });
+  }
+  return processPromise;
+}
+
+async function processMessagesOnce() {
   const keys = await getKeysForCurrentPage();
   const domElements = getDomElementsForService();
   if (!keys || !domElements) return;
 
   const { myKey, peerKey } = keys;
   const { myMessages, peerMessages } = domElements;
-  const myFingerprint = await keyFingerprint(myKey, "my");
-  const peerFingerprint = await keyFingerprint(peerKey, "peer");
   let newlyDecrypted = 0;
 
   for (const msg of myMessages) {
-    if (await decryptMessageNode(msg, myKey, myFingerprint)) newlyDecrypted++;
+    if (await decryptMessageNode(msg, myKey, "my")) newlyDecrypted++;
   }
 
   for (const msg of peerMessages) {
-    if (await decryptMessageNode(msg, peerKey, peerFingerprint)) newlyDecrypted++;
+    if (await decryptMessageNode(msg, peerKey, "peer")) newlyDecrypted++;
   }
 
   if (newlyDecrypted > 0) {
@@ -412,8 +304,8 @@ async function handleFeedMessageClick(e) {
   const info = getMessageTextSpanAndVariant(e.target);
   if (!info) return;
   const { textSpan, isMy } = info;
-  if (textSpan.getAttribute(DECRYPTED_ATTR)) return;
   const raw = getMessageRawText(textSpan);
+  if (textSpan.getAttribute(DECRYPTED_ATTR) && !raw.startsWith(ENCRYPTED_PREFIX)) return;
   if (!raw.startsWith(ENCRYPTED_PREFIX)) return;
 
   e.preventDefault();
@@ -422,8 +314,7 @@ async function handleFeedMessageClick(e) {
   const keys = await getKeysForCurrentPage();
   if (!keys) return;
   const password = isMy ? keys.myKey : keys.peerKey;
-  const fingerprint = await keyFingerprint(password, isMy ? "my" : "peer");
-  const decrypted = await decryptMessageNode(textSpan, password, fingerprint, { force: true });
+  const decrypted = await decryptMessageNode(textSpan, password, isMy ? "my" : "peer", { force: true });
   if (!decrypted) return;
 
   _decryptedCount++;
@@ -442,7 +333,7 @@ function startMessageObserver() {
   const observer = new MutationObserver(() => {
     if (_observerTimer) clearTimeout(_observerTimer);
     _observerTimer = setTimeout(() => {
-      processMessages();
+      processMessages().catch(() => {});
       markEncryptedInFeed();
     }, 300);
   });
@@ -451,12 +342,14 @@ function startMessageObserver() {
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local" || !changes.urlKeys) return;
-  _keyCache.clear();
-  document.querySelectorAll(`[${FAILED_ATTR}]`).forEach((el) => {
-    el.removeAttribute(FAILED_ATTR);
-    el.removeAttribute("title");
-  });
-  processMessages().catch(() => {});
+  globalThis.NebulaMessageCrypto.clearKeyCache();
+  failedDecryptions = new WeakMap();
+  document.querySelectorAll("[data-nebula-encrypted]").forEach((el) => el.removeAttribute("title"));
+  if (processPromise) {
+    processPromise.then(() => processMessages(), () => processMessages()).catch(() => {});
+  } else {
+    processMessages().catch(() => {});
+  }
 });
 
 // --------------- Message listener ---------------
@@ -571,6 +464,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 async function boot() {
   try {
+    document.querySelectorAll("[data-nebula-decrypt-failed]").forEach((el) => el.removeAttribute("data-nebula-decrypt-failed"));
     startMessageObserver();
     await processMessages();
     markEncryptedInFeed();

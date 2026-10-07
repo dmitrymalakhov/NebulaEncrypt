@@ -60,7 +60,7 @@ function sendCommandToTab(action) {
     const tabId = tab.id;
     if (!tabId) return;
     chrome.scripting.executeScript(
-      { target: { tabId }, files: ["content.js"] },
+      { target: { tabId }, files: ["message-crypto.js", "content.js"] },
       () => {
         if (chrome.runtime.lastError) return;
         chrome.tabs.sendMessage(tabId, { action }, (response) => {
